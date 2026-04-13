@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Smart TV Search",
+    "slug": "smart-tv-search",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "smarttvsearch",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f0f0f"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f0f0f"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.smarttvsearch.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Used for voice search"
+      }
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
