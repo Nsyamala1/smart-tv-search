@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let _client: Anthropic | null = null;
+function getClient() {
+  if (!_client) _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _client;
+}
 
 export interface ParsedIntent {
   searchTerms: string[];
@@ -16,7 +20,7 @@ export interface ParsedIntent {
  *   { searchTerms: ["Inception", "comedy thriller"], mood: "funny", similarTo: "Inception", type: "movie" }
  */
 export async function parseSearchIntent(query: string): Promise<ParsedIntent> {
-  const message = await client.messages.create({
+  const message = await getClient().messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 256,
     system: `You are a movie/TV search assistant. Parse the user's natural language query into a structured JSON object.

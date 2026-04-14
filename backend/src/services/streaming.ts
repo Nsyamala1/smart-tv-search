@@ -6,15 +6,23 @@ export interface StreamingAvailability {
   searchQuery: string;
 }
 
-// JustWatch has no official public API — we use their internal search endpoint.
-// This may break; swap in a paid API (Streaming Availability by MovieOfTheNight) if needed.
-const JUSTWATCH_SEARCH = 'https://apis.justwatch.com/contentpartner/v2/content/offers/object_type/movie/locale/en_US';
+const TMDB_BASE = 'https://api.themoviedb.org/3';
 
-const KNOWN_SERVICES = ['netflix', 'prime', 'youtube', 'disney', 'hulu', 'apple'];
+// Maps TMDB provider IDs to our internal service names
+const PROVIDER_ID_MAP: Record<number, string> = {
+  8:   'netflix',
+  9:   'prime',
+  10:  'prime',
+  337: 'disney',
+  15:  'hulu',
+  2:   'apple',
+  192: 'youtube',
+  188: 'youtube',
+};
 
 /**
- * Returns which streaming services have this title.
- * Falls back to a best-guess list if JustWatch is unavailable.
+ * Uses TMDB's official watch providers endpoint to find streaming availability.
+ * Falls back to YouTube search if unavailable.
  */
 export async function getStreamingAvailability(
   tmdbId: number,
@@ -22,17 +30,32 @@ export async function getStreamingAvailability(
   title: string
 ): Promise<StreamingAvailability[]> {
   try {
-    const response = await axios.get(
-      `https://apis.justwatch.com/content/titles/${type === 'movie' ? 'movie' : 'show'}/${tmdbId}/locale/en_US`,
-      { timeout: 5000 }
-    );
+    const apiKey = process.env.TMDB_API_KEY;
+    const endpoint = type === 'movie'
+      ? `/movie/${tmdbId}/watch/providers`
+      : `/tv/${tmdbId}/watch/providers`;
 
-    const offers: any[] = response.data?.offers ?? [];
+    const response = await axios.get(`${TMDB_BASE}${endpoint}`, {
+      params: { api_key: apiKey },
+      timeout: 5000,
+    });
+
+    // Use US providers — expand to other regions as needed
+    const usProviders = response.data?.results?.US;
+    if (!usProviders) return fallback(title);
+
+    // Combine flatrate (subscription) + free providers
+    const providers: any[] = [
+      ...(usProviders.flatrate ?? []),
+      ...(usProviders.free ?? []),
+      ...(usProviders.ads ?? []),
+    ];
+
     const seen = new Set<string>();
     const results: StreamingAvailability[] = [];
 
-    for (const offer of offers) {
-      const service = normalizeService(offer.package_short_name);
+    for (const provider of providers) {
+      const service = PROVIDER_ID_MAP[provider.provider_id];
       if (!service || seen.has(service)) continue;
       seen.add(service);
       results.push({
@@ -42,41 +65,31 @@ export async function getStreamingAvailability(
       });
     }
 
+    // Always include YouTube as a fallback option
+    if (!seen.has('youtube')) {
+      results.push({ service: 'youtube', searchQuery: title });
+    }
+
     return results.length > 0 ? results : fallback(title);
   } catch {
     return fallback(title);
   }
 }
 
-function normalizeService(name: string): string | null {
-  const map: Record<string, string> = {
-    nfx: 'netflix',
-    amp: 'prime',
-    yt: 'youtube',
-    dnp: 'disney',
-    hlu: 'hulu',
-    atp: 'apple',
-  };
-  return map[name] ?? null;
-}
-
-function buildDeepLink(service: string, id: number, type: 'movie' | 'show'): string | undefined {
-  // Android TV deep links (most reliable cross-platform)
+function buildDeepLink(service: string, id: number, _type: 'movie' | 'show'): string | undefined {
   switch (service) {
-    case 'netflix':
-      return `https://www.netflix.com/watch/${id}`;
-    case 'prime':
-      return `https://www.amazon.com/dp/${id}`;
-    case 'youtube':
-      return `https://www.youtube.com/results?search_query=${id}`;
-    default:
-      return undefined;
+    case 'netflix': return `https://www.netflix.com/watch/${id}`;
+    case 'prime':   return `https://www.amazon.com/dp/${id}`;
+    default:        return undefined;
   }
 }
 
 function fallback(title: string): StreamingAvailability[] {
-  // Can't determine availability — return a generic search fallback
   return [
-    { service: 'youtube', searchQuery: title },
+    { service: 'netflix',  searchQuery: title },
+    { service: 'prime',    searchQuery: title },
+    { service: 'youtube',  searchQuery: title },
+    { service: 'disney',   searchQuery: title },
+    { service: 'hulu',     searchQuery: title },
   ];
 }

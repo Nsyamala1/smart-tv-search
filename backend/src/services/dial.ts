@@ -32,12 +32,16 @@ export function discoverDialDevices(timeoutMs = 5000): Promise<TVDevice[]> {
     const socket = dgram.createSocket('udp4');
     const locationUrls: string[] = [];
 
+    const seen = new Map<string, string>(); // location → application-url
+
     socket.on('message', (msg) => {
       const response = msg.toString();
       const locationMatch = response.match(/LOCATION:\s*(.+)/i);
+      const appUrlMatch = response.match(/Application-URL:\s*(.+)/i);
       if (locationMatch) {
-        const url = locationMatch[1].trim();
-        if (!locationUrls.includes(url)) locationUrls.push(url);
+        const location = locationMatch[1].trim();
+        const appUrl = appUrlMatch ? appUrlMatch[1].trim() : '';
+        if (!seen.has(location)) seen.set(location, appUrl);
       }
     });
 
@@ -49,13 +53,15 @@ export function discoverDialDevices(timeoutMs = 5000): Promise<TVDevice[]> {
 
     setTimeout(async () => {
       socket.close();
-      const devices = await Promise.all(locationUrls.map(fetchDeviceInfo));
+      const devices = await Promise.all(
+        Array.from(seen.entries()).map(([loc, appUrl]) => fetchDeviceInfo(loc, appUrl))
+      );
       resolve(devices.filter((d): d is TVDevice => d !== null));
     }, timeoutMs);
   });
 }
 
-async function fetchDeviceInfo(locationUrl: string): Promise<TVDevice | null> {
+async function fetchDeviceInfo(locationUrl: string, applicationUrl: string): Promise<TVDevice | null> {
   try {
     const response = await axios.get(locationUrl, { timeout: 3000 });
     const xml = await parseStringPromise(response.data);
@@ -67,9 +73,12 @@ async function fetchDeviceInfo(locationUrl: string): Promise<TVDevice | null> {
     const friendlyName = device.friendlyName?.[0] ?? 'Smart TV';
     const udn = device.UDN?.[0] ?? locationUrl;
 
-    // The DIAL REST URL is returned in the LOCATION header's base + /apps
-    const baseUrl = locationUrl.replace(/\/[^/]*$/, '');
-    const dialUrl = `${baseUrl}/apps`;
+    // Prefer the Application-URL from SSDP headers (authoritative DIAL endpoint)
+    // Fall back to deriving it from the origin of the location URL
+    const origin = `${new URL(locationUrl).protocol}//${new URL(locationUrl).host}`;
+    const dialUrl = applicationUrl
+      ? applicationUrl.replace(/\/$/, '')  // strip trailing slash
+      : `${origin}/apps`;
 
     return {
       id: udn,

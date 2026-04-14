@@ -38,15 +38,19 @@ export async function discoverDevices(): Promise<TVDevice[]> {
 }
 
 /**
- * Launch content on the TV.
- * Strategy:
- *   1. Android TV — use Android intent deep link
- *   2. Others — launch the app via DIAL, then send search text
+ * Step 1: Open the streaming app on the TV (no search yet).
+ * The user selects their profile on the TV, then calls launchSearch.
  */
-export async function launchOnTV(device: TVDevice, content: ContentResult): Promise<void> {
+export async function launchApp(device: TVDevice, service: string): Promise<void> {
   const { BACKEND_URL } = await import('./config');
-  await axios.post(`${BACKEND_URL}/devices/launch`, {
-    device,
-    content,
-  });
+  await axios.post(`${BACKEND_URL}/devices/launch-app`, { device, service });
+}
+
+/**
+ * Step 2: Send the search query to the already-open app.
+ * Called after the user has selected their profile on the TV.
+ */
+export async function launchSearch(device: TVDevice, content: ContentResult): Promise<void> {
+  const { BACKEND_URL } = await import('./config');
+  await axios.post(`${BACKEND_URL}/devices/launch-search`, { device, content });
 }
