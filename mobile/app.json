@@ -13,6 +13,7 @@
       "backgroundColor": "#0f0f0f"
     },
     "android": {
+      "package": "com.smarttvsearch.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f0f0f"
@@ -34,6 +35,13 @@
       "expo-router",
       "expo-asset",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4c4b0fc8-5ea2-4b2d-953c-168dcecf4ccf"
+      }
+    },
+    "owner": "nsyamala1"
   }
 }
