@@ -38,6 +38,16 @@ export async function discoverDevices(): Promise<TVDevice[]> {
 }
 
 /**
+ * Manually connect to a TV by IP address (Fire TV, Android TV, Chromecast with Google TV).
+ * Returns the device info if ADB connects successfully.
+ */
+export async function connectManually(ip: string): Promise<TVDevice> {
+  const { BACKEND_URL } = await import('./config');
+  const response = await axios.post(`${BACKEND_URL}/devices/connect`, { ip });
+  return response.data.device;
+}
+
+/**
  * Step 1: Open the streaming app on the TV (no search yet).
  * The user selects their profile on the TV, then calls launchSearch.
  */

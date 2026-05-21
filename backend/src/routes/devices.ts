@@ -18,6 +18,52 @@ router.get('/discover', async (_req: Request, res: Response) => {
   }
 });
 
+// POST /devices/connect — manually connect to a TV by IP address
+// Tries ADB connect and reads device name from the Android property system.
+// Works for Fire TV, Android TV, and Chromecast with Google TV.
+router.post('/connect', async (req: Request, res: Response) => {
+  const { ip } = req.body as { ip: string };
+  if (!ip) {
+    res.status(400).json({ error: 'ip is required' });
+    return;
+  }
+  const adbTarget = `${ip}:5555`;
+  try {
+    const { stdout: connOut } = await execAsync(`adb connect ${adbTarget}`);
+    if (connOut.includes('refused') || connOut.includes('unable')) {
+      res.status(400).json({ error: `Could not connect to ${ip}. Make sure ADB is enabled on the TV (Developer options → ADB debugging).` });
+      return;
+    }
+    // Read friendly name and manufacturer from the device
+    const { stdout: name } = await execAsync(`adb -s ${adbTarget} shell getprop ro.product.model`);
+    const { stdout: mfr }  = await execAsync(`adb -s ${adbTarget} shell getprop ro.product.manufacturer`);
+    const friendlyName = name.trim() || 'Android TV';
+    const manufacturer = mfr.trim() || 'Unknown';
+
+    const device: TVDevice = {
+      id: `manual-${ip}`,
+      friendlyName,
+      manufacturer,
+      ip,
+      dialUrl: `http://${ip}:60000/apps`,
+      platform: detectAdbPlatform(manufacturer, friendlyName),
+    };
+    console.log(`Manual connect: ${friendlyName} (${manufacturer}) at ${ip}`);
+    res.json({ device });
+  } catch (err) {
+    console.error('Manual connect error:', err);
+    res.status(500).json({ error: `Could not connect to ${ip}` });
+  }
+});
+
+function detectAdbPlatform(manufacturer: string, friendlyName: string): TVDevice['platform'] {
+  const m = manufacturer.toLowerCase();
+  const n = friendlyName.toLowerCase();
+  if (m.includes('amazon') || n.includes('fire')) return 'fire-tv';
+  if (m.includes('google') || n.includes('chromecast')) return 'android-tv';
+  return 'android-tv'; // safe default for ADB devices
+}
+
 // POST /devices/launch-app — Step 1: open the app only (no search)
 // Used to let the user select their profile on the TV first.
 router.post('/launch-app', async (req: Request, res: Response) => {
