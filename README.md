@@ -62,3 +62,22 @@ npx expo start
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `TMDB_API_KEY` | The Movie Database API key (free) |
 | `PORT` | Backend port (default: 3001) |
+
+## Running in two places
+
+The backend runs in one of three modes, set by `MODE`:
+
+| MODE | Serves | Where it runs |
+|---|---|---|
+| `search` (default) | `/search` only | Railway, reachable from anywhere |
+| `tv` | `/devices/*` only | At home, on the same Wi-Fi as the TV (needs `adb`) |
+| `all` | both | Local development |
+
+Both halves require an `x-app-token` header (`APP_TOKEN` for search, `TV_TOKEN` for TV control)
+and refuse all requests if their token is not set. Search is also limited per IP
+(`SEARCH_PER_MINUTE`) and per day in total (`DAILY_SEARCH_LIMIT`).
+
+The phone app reads `EXPO_PUBLIC_SEARCH_URL`, `EXPO_PUBLIC_TV_URL`, `EXPO_PUBLIC_APP_TOKEN`
+and `EXPO_PUBLIC_TV_TOKEN` from `mobile/.env`. See `mobile/.env.example`.
+
+On Railway, set the service root directory to `backend`.

@@ -1,10 +1,25 @@
 import { Router, Request, Response } from 'express';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import axios from 'axios';
 import { discoverDialDevices, TVDevice } from '../services/dial';
+import { isPrivateIPv4 } from '../lib/security';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+// adb is always run with an argument list, never through a shell, so nothing
+// from a request can become a command on this machine.
+function adb(...args: string[]) {
+  return execFileAsync('adb', args, { timeout: 15000 });
+}
+
+// The TV address comes from the request, so it is checked on every call.
+function adbTargetFor(ip: unknown): string {
+  if (!isPrivateIPv4(ip)) throw new BadRequest('ip must be a home-network IPv4 address');
+  return `${ip}:5555`;
+}
+
+class BadRequest extends Error {}
 const router = Router();
 
 // GET /devices/discover
@@ -23,20 +38,20 @@ router.get('/discover', async (_req: Request, res: Response) => {
 // Works for Fire TV, Android TV, and Chromecast with Google TV.
 router.post('/connect', async (req: Request, res: Response) => {
   const { ip } = req.body as { ip: string };
-  if (!ip) {
-    res.status(400).json({ error: 'ip is required' });
+  if (!isPrivateIPv4(ip)) {
+    res.status(400).json({ error: 'ip must be a home-network IPv4 address, for example 192.168.1.50' });
     return;
   }
   const adbTarget = `${ip}:5555`;
   try {
-    const { stdout: connOut } = await execAsync(`adb connect ${adbTarget}`);
+    const { stdout: connOut } = await adb('connect', adbTarget);
     if (connOut.includes('refused') || connOut.includes('unable')) {
       res.status(400).json({ error: `Could not connect to ${ip}. Make sure ADB is enabled on the TV (Developer options → ADB debugging).` });
       return;
     }
     // Read friendly name and manufacturer from the device
-    const { stdout: name } = await execAsync(`adb -s ${adbTarget} shell getprop ro.product.model`);
-    const { stdout: mfr }  = await execAsync(`adb -s ${adbTarget} shell getprop ro.product.manufacturer`);
+    const { stdout: name } = await adb('-s', adbTarget, 'shell', 'getprop', 'ro.product.model');
+    const { stdout: mfr }  = await adb('-s', adbTarget, 'shell', 'getprop', 'ro.product.manufacturer');
     const friendlyName = name.trim() || 'Android TV';
     const manufacturer = mfr.trim() || 'Unknown';
 
@@ -81,6 +96,7 @@ router.post('/launch-app', async (req: Request, res: Response) => {
     }
     res.json({ success: true });
   } catch (err) {
+    if (err instanceof BadRequest) { res.status(400).json({ error: err.message }); return; }
     console.error('Launch-app error:', err);
     res.status(500).json({ error: 'Could not open app' });
   }
@@ -116,6 +132,7 @@ router.post('/launch-search', async (req: Request, res: Response) => {
     }
     res.json({ success: true });
   } catch (err) {
+    if (err instanceof BadRequest) { res.status(400).json({ error: err.message }); return; }
     console.error('Launch-search error:', err);
     res.status(500).json({ error: 'Could not send search to TV' });
   }
@@ -124,11 +141,11 @@ router.post('/launch-search', async (req: Request, res: Response) => {
 // Step 1: open the app without force-stopping so an existing session is preserved
 async function openAppViaAdb(device: TVDevice, service: string) {
   const pkg = ADB_PACKAGES[service];
-  if (!pkg) throw new Error(`Unknown service: ${service}`);
-  const adbTarget = `${device.ip}:5555`;
-  await execAsync(`adb connect ${adbTarget}`);
-  const { stdout } = await execAsync(
-    `adb -s ${adbTarget} shell monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`
+  if (!pkg) throw new BadRequest(`Unknown service: ${service}`);
+  const adbTarget = adbTargetFor(device.ip);
+  await adb('connect', adbTarget);
+  const { stdout } = await adb(
+    '-s', adbTarget, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'
   );
   console.log('Open app stdout:', stdout.trim());
 }
@@ -136,12 +153,12 @@ async function openAppViaAdb(device: TVDevice, service: string) {
 // Step 2a: YouTube — deep-link directly into the already-running app
 async function searchViaAdb(device: TVDevice, service: string, searchQuery: string) {
   const pkg = ADB_PACKAGES[service];
-  if (!pkg) throw new Error(`Unknown service: ${service}`);
-  const adbTarget = `${device.ip}:5555`;
-  await execAsync(`adb connect ${adbTarget}`);
+  if (!pkg) throw new BadRequest(`Unknown service: ${service}`);
+  const adbTarget = adbTargetFor(device.ip);
+  await adb('connect', adbTarget);
   const intent = buildSearchIntent(service, searchQuery, pkg);
   console.log(`Search intent: ${intent}`);
-  const { stdout, stderr } = await execAsync(`adb -s ${adbTarget} shell ${intent}`);
+  const { stdout, stderr } = await adb('-s', adbTarget, 'shell', intent);
   console.log('ADB stdout:', stdout.trim());
   if (stderr.trim()) console.log('ADB stderr:', stderr.trim());
 }
@@ -152,23 +169,30 @@ async function searchViaAdb(device: TVDevice, service: string, searchQuery: stri
 // wait for the in-app search UI to appear, then type the query and confirm.
 // This works entirely within the existing session so the profile selection is preserved.
 async function searchViaKeycodes(device: TVDevice, searchQuery: string) {
-  const adbTarget = `${device.ip}:5555`;
-  await execAsync(`adb connect ${adbTarget}`);
+  const adbTarget = adbTargetFor(device.ip);
+  await adb('connect', adbTarget);
 
   // Simulate pressing the search / mic button on the Fire TV remote
-  await execAsync(`adb -s ${adbTarget} shell input keyevent KEYCODE_SEARCH`);
+  await adb('-s', adbTarget, 'shell', 'input', 'keyevent', 'KEYCODE_SEARCH');
 
   // Give the in-app search UI time to open (Netflix/Disney+ need ~1.5 s)
   await new Promise(resolve => setTimeout(resolve, 1500));
 
   // `input text` sends the string to the focused text field.
   // Spaces must be passed as %s; strip quotes to keep the shell command safe.
-  const textToType = searchQuery.replace(/ /g, '%s').replace(/['"]/g, '');
-  await execAsync(`adb -s ${adbTarget} shell input text "${textToType}"`);
+  // The TV runs this through its own shell, so only letters, digits and spaces
+  // are allowed through. Everything else is dropped.
+  const textToType = String(searchQuery)
+    .slice(0, 100)
+    .replace(/[^A-Za-z0-9 ]/g, '')
+    .trim()
+    .replace(/ +/g, '%s');
+  if (!textToType) throw new BadRequest('search text is empty');
+  await adb('-s', adbTarget, 'shell', 'input', 'text', textToType);
 
   // Small pause, then confirm the search
   await new Promise(resolve => setTimeout(resolve, 500));
-  await execAsync(`adb -s ${adbTarget} shell input keyevent KEYCODE_ENTER`);
+  await adb('-s', adbTarget, 'shell', 'input', 'keyevent', 'KEYCODE_ENTER');
 
   console.log(`Keycode search sent: "${searchQuery}"`);
 }
@@ -177,7 +201,12 @@ function buildSearchIntent(service: string, searchQuery: string, pkg: string): s
   // --activity-clear-top navigates within the existing session without killing the app
   // This preserves the user's profile selection
   const flags = '--activity-clear-top';
-  const q = encodeURIComponent(searchQuery);
+  // encodeURIComponent leaves ! ' ( ) * alone; escape those too so the value is
+  // inert inside the double quotes the TV's shell sees.
+  const q = encodeURIComponent(String(searchQuery).slice(0, 100)).replace(
+    /[!'()*]/g,
+    (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+  );
 
   switch (service) {
     case 'youtube':
@@ -196,8 +225,13 @@ function buildSearchIntent(service: string, searchQuery: string, pkg: string): s
 }
 
 async function launchViaDial(device: TVDevice, service: string, searchQuery: string) {
-  const appName = DIAL_APP_NAMES[service] ?? service;
-  const url = `${device.dialUrl}/${appName}`;
+  const appName = DIAL_APP_NAMES[service];
+  if (!appName) throw new BadRequest(`Unknown service: ${service}`);
+  // Only ever call the TV itself: the address must be on the home network.
+  let host: string;
+  try { host = new URL(device.dialUrl).hostname; } catch { throw new BadRequest('bad dialUrl'); }
+  if (!isPrivateIPv4(host)) throw new BadRequest('dialUrl must point at a home-network address');
+  const url = `${device.dialUrl.replace(/\/+$/, '')}/${appName}`;
   const body = searchQuery ? `query=${encodeURIComponent(searchQuery)}` : '';
   try {
     await axios.post(url, body, { headers: { 'Content-Type': 'text/plain' }, timeout: 5000 });

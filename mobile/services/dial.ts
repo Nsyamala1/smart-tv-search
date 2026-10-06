@@ -27,9 +27,10 @@ export function setSelectedDevice(device: TVDevice) {
  */
 export async function discoverDevices(): Promise<TVDevice[]> {
   try {
-    const { BACKEND_URL } = await import('./config');
-    const response = await axios.get(`${BACKEND_URL}/devices/discover`, {
+    const { TV_URL, TV_HEADERS } = await import('./config');
+    const response = await axios.get(`${TV_URL}/devices/discover`, {
       timeout: 10000,
+      headers: TV_HEADERS,
     });
     return response.data.devices;
   } catch {
@@ -42,8 +43,8 @@ export async function discoverDevices(): Promise<TVDevice[]> {
  * Returns the device info if ADB connects successfully.
  */
 export async function connectManually(ip: string): Promise<TVDevice> {
-  const { BACKEND_URL } = await import('./config');
-  const response = await axios.post(`${BACKEND_URL}/devices/connect`, { ip });
+  const { TV_URL, TV_HEADERS } = await import('./config');
+  const response = await axios.post(`${TV_URL}/devices/connect`, { ip }, { headers: TV_HEADERS });
   return response.data.device;
 }
 
@@ -52,8 +53,8 @@ export async function connectManually(ip: string): Promise<TVDevice> {
  * The user selects their profile on the TV, then calls launchSearch.
  */
 export async function launchApp(device: TVDevice, service: string): Promise<void> {
-  const { BACKEND_URL } = await import('./config');
-  await axios.post(`${BACKEND_URL}/devices/launch-app`, { device, service });
+  const { TV_URL, TV_HEADERS } = await import('./config');
+  await axios.post(`${TV_URL}/devices/launch-app`, { device, service }, { headers: TV_HEADERS });
 }
 
 /**
@@ -61,6 +62,6 @@ export async function launchApp(device: TVDevice, service: string): Promise<void
  * Called after the user has selected their profile on the TV.
  */
 export async function launchSearch(device: TVDevice, content: ContentResult): Promise<void> {
-  const { BACKEND_URL } = await import('./config');
-  await axios.post(`${BACKEND_URL}/devices/launch-search`, { device, content });
+  const { TV_URL, TV_HEADERS } = await import('./config');
+  await axios.post(`${TV_URL}/devices/launch-search`, { device, content }, { headers: TV_HEADERS });
 }

@@ -8,8 +8,12 @@ const router = Router();
 router.post('/', async (req: Request, res: Response) => {
   const { query } = req.body;
 
-  if (!query || typeof query !== 'string') {
+  if (!query || typeof query !== 'string' || !query.trim()) {
     res.status(400).json({ error: 'query is required' });
+    return;
+  }
+  if (query.length > 200) {
+    res.status(400).json({ error: 'query is too long (200 characters max)' });
     return;
   }
 
