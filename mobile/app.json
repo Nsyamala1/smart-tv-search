@@ -7,11 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "smarttvsearch",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0f0f0f"
-    },
     "android": {
       "package": "com.smarttvsearch.app",
       "adaptiveIcon": {
@@ -34,7 +29,16 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0f0f0f"
+        }
+      ]
     ],
     "extra": {
       "router": {},
