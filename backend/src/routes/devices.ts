@@ -10,7 +10,9 @@ const execFileAsync = promisify(execFile);
 // adb is always run with an argument list, never through a shell, so nothing
 // from a request can become a command on this machine.
 function adb(...args: string[]) {
-  return execFileAsync('adb', args, { timeout: 15000 });
+  // Typing a long title one character at a time can take well over 15 seconds.
+  const isTyping = args.some((a) => a.startsWith('input text'));
+  return execFileAsync('adb', args, { timeout: isTyping ? 90000 : 15000 });
 }
 
 // The TV address comes from the request, so it is checked on every call.
@@ -178,17 +180,29 @@ async function searchViaKeycodes(device: TVDevice, searchQuery: string) {
   // Give the in-app search UI time to open (Netflix/Disney+ need ~1.5 s)
   await new Promise(resolve => setTimeout(resolve, 1500));
 
-  // `input text` sends the string to the focused text field.
-  // Spaces must be passed as %s; strip quotes to keep the shell command safe.
   // The TV runs this through its own shell, so only letters, digits and spaces
-  // are allowed through. Everything else is dropped.
-  const textToType = String(searchQuery)
+  // are allowed through. Accents are folded to plain letters first (Amélie ->
+  // Amelie) and "&" becomes "and", so titles keep their spelling instead of
+  // losing letters.
+  const clean = String(searchQuery)
     .slice(0, 100)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
     .replace(/[^A-Za-z0-9 ]/g, '')
-    .trim()
-    .replace(/ +/g, '%s');
-  if (!textToType) throw new BadRequest('search text is empty');
-  await adb('-s', adbTarget, 'shell', 'input', 'text', textToType);
+    .replace(/ +/g, ' ')
+    .trim();
+  if (!clean) throw new BadRequest('search text is empty');
+
+  // Type one character at a time with a short pause. Sending the whole title in
+  // one go makes Netflix drop or scramble letters. Every character here is a
+  // letter, digit or %s (space), so the string is safe for the TV's shell.
+  const typing = clean
+    .split('')
+    .map((c) => `input text ${c === ' ' ? '%s' : c}`)
+    .join('; sleep 0.12; ');
+  await adb('-s', adbTarget, 'shell', typing);
+  console.log(`Typed on TV: "${clean}"`);
 
   // Small pause, then confirm the search
   await new Promise(resolve => setTimeout(resolve, 500));
