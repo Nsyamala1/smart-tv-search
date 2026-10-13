@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { recordUsage } from '../lib/usage-report';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w185';
@@ -26,6 +27,7 @@ export async function searchTMDB(
   const response = await axios.get(`${TMDB_BASE}${endpoint}`, {
     params: { api_key: apiKey, query: term, page: 1 },
   });
+  recordUsage('tmdb', 'tmdb');
 
   const results = response.data.results ?? [];
 

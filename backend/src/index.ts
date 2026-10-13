@@ -1,3 +1,4 @@
+import { flushUsage } from './lib/usage-report';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -49,4 +50,9 @@ app.get('/health', (_req, res) => {
 
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`Smart TV Search (${MODE}) listening on 0.0.0.0:${PORT}`);
+});
+
+// Send any unreported usage before Railway stops this copy during a deploy.
+process.on('SIGTERM', () => {
+  flushUsage().finally(() => process.exit(0));
 });

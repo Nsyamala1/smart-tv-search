@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { recordUsage } from '../lib/usage-report';
 
 export interface StreamingAvailability {
   service: string;
@@ -39,6 +40,7 @@ export async function getStreamingAvailability(
       params: { api_key: apiKey },
       timeout: 5000,
     });
+  recordUsage('tmdb', 'tmdb');
 
     // Use US providers — expand to other regions as needed
     const usProviders = response.data?.results?.US;

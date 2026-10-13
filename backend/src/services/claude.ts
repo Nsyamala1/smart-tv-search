@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { recordUsage } from '../lib/usage-report';
 
 let _client: Anthropic | null = null;
 function getClient() {
@@ -32,6 +33,8 @@ Return ONLY valid JSON with these fields:
 - similarTo: string (optional, title they referenced)`,
     messages: [{ role: 'user', content: query }],
   });
+
+  recordUsage('anthropic', message.model, message.usage?.input_tokens, message.usage?.output_tokens);
 
   const text = message.content[0].type === 'text' ? message.content[0].text : '{}';
 
