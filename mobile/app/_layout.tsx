@@ -15,6 +15,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'Smart TV Search' }} />
         <Stack.Screen name="devices" options={{ title: 'Select TV' }} />
+        <Stack.Screen name="remote" options={{ title: 'Remote' }} />
         <Stack.Screen name="results" options={{ title: 'Results' }} />
       </Stack>
     </>

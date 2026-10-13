@@ -12,7 +12,7 @@ import { router, useFocusEffect } from 'expo-router';
 import SearchBar from '../components/SearchBar';
 import ContentCard from '../components/ContentCard';
 import { searchContent, ContentResult } from '../services/content';
-import { getSelectedDevice, launchSearch, TVDevice } from '../services/dial';
+import { getSelectedDevice, loadSelectedDevice, launchSearch, TVDevice } from '../services/dial';
 
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
@@ -24,6 +24,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       setSelectedDeviceState(getSelectedDevice());
+      loadSelectedDevice().then(setSelectedDeviceState);
     }, [])
   );
 
@@ -85,6 +86,12 @@ export default function HomeScreen() {
           <Text style={styles.tvButtonText}>Select TV</Text>
         )}
       </TouchableOpacity>
+
+      {selectedDevice && (
+        <TouchableOpacity style={styles.remoteLink} onPress={() => router.push('/remote')}>
+          <Text style={styles.tvButtonChange}>Open remote</Text>
+        </TouchableOpacity>
+      )}
 
       {(loading || launching) && (
         <ActivityIndicator size="large" color="#e50914" style={styles.loader} />
@@ -152,6 +159,10 @@ const styles = StyleSheet.create({
   tvButtonChange: {
     color: '#888',
     fontSize: 12,
+  },
+  remoteLink: {
+    alignSelf: 'center',
+    padding: 8,
   },
   loader: {
     marginTop: 32,

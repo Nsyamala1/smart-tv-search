@@ -1,4 +1,5 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ContentResult } from './content';
 
 export interface TVDevice {
@@ -17,8 +18,31 @@ export function getSelectedDevice(): TVDevice | null {
   return selectedDevice;
 }
 
+const STORAGE_KEY = 'selectedTV';
+
 export function setSelectedDevice(device: TVDevice) {
   selectedDevice = device;
+  AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(device)).catch(() => {});
+}
+
+/** Call once at startup: restores the TV picked last time. */
+export async function loadSelectedDevice(): Promise<TVDevice | null> {
+  if (selectedDevice) return selectedDevice;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (raw) selectedDevice = JSON.parse(raw) as TVDevice;
+  } catch {}
+  return selectedDevice;
+}
+
+export type RemoteKey =
+  | 'up' | 'down' | 'left' | 'right' | 'select' | 'back' | 'home'
+  | 'playpause' | 'rewind' | 'forward' | 'volup' | 'voldown' | 'mute';
+
+/** Presses one button on the TV's virtual remote. */
+export async function sendKey(device: TVDevice, key: RemoteKey): Promise<void> {
+  const { TV_URL, TV_HEADERS } = await import('./config');
+  await axios.post(`${TV_URL}/devices/key`, { ip: device.ip, key }, { headers: TV_HEADERS, timeout: 8000 });
 }
 
 /**

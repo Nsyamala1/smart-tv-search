@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import axios from 'axios';
 import { discoverDialDevices, TVDevice } from '../services/dial';
+import { scanForAdbDevices } from '../services/scan';
 import { isPrivateIPv4 } from '../lib/security';
 
 const execFileAsync = promisify(execFile);
@@ -25,9 +26,24 @@ class BadRequest extends Error {}
 const router = Router();
 
 // GET /devices/discover
+// Two scans run together: SSDP/DIAL (TVs that announce themselves) and a probe
+// for the ADB port (Fire TV / Android TV with debugging on). A TV found by both
+// is listed once, with the nicer name from DIAL.
 router.get('/discover', async (_req: Request, res: Response) => {
   try {
-    const devices = await discoverDialDevices(5000);
+    const [dial, adbCandidates] = await Promise.all([
+      discoverDialDevices(5000).catch((err) => {
+        console.error('DIAL discovery error:', err);
+        return [] as TVDevice[];
+      }),
+      scanForAdbDevices().catch((err) => {
+        console.error('ADB scan error:', err);
+        return [] as TVDevice[];
+      }),
+    ]);
+    const known = new Set(dial.map((d) => d.ip));
+    const devices = [...dial, ...adbCandidates.filter((d) => !known.has(d.ip))];
+    console.log(`Discovery: ${dial.length} announced, ${adbCandidates.length} with ADB open`);
     res.json({ devices });
   } catch (err) {
     console.error('Discovery error:', err);
@@ -275,5 +291,40 @@ const DIAL_APP_NAMES: Record<string, string> = {
   hulu:    'Hulu',
   apple:   'AppleTVPlus',
 };
+
+// POST /devices/key — virtual remote. Only these named buttons are accepted;
+// nothing from the request is ever passed to the shell as-is.
+const REMOTE_KEYS: Record<string, string> = {
+  up: 'KEYCODE_DPAD_UP',
+  down: 'KEYCODE_DPAD_DOWN',
+  left: 'KEYCODE_DPAD_LEFT',
+  right: 'KEYCODE_DPAD_RIGHT',
+  select: 'KEYCODE_DPAD_CENTER',
+  back: 'KEYCODE_BACK',
+  home: 'KEYCODE_HOME',
+  playpause: 'KEYCODE_MEDIA_PLAY_PAUSE',
+  rewind: 'KEYCODE_MEDIA_REWIND',
+  forward: 'KEYCODE_MEDIA_FAST_FORWARD',
+  volup: 'KEYCODE_VOLUME_UP',
+  voldown: 'KEYCODE_VOLUME_DOWN',
+  mute: 'KEYCODE_VOLUME_MUTE',
+};
+
+router.post('/key', async (req: Request, res: Response) => {
+  const { ip, key } = req.body as { ip: string; key: string };
+  const keycode = typeof key === 'string' && Object.prototype.hasOwnProperty.call(REMOTE_KEYS, key) ? REMOTE_KEYS[key] : null;
+  if (!isPrivateIPv4(ip) || !keycode) {
+    res.status(400).json({ error: 'a home-network ip and a known key are required' });
+    return;
+  }
+  try {
+    await adb('connect', `${ip}:5555`);
+    await adb('-s', `${ip}:5555`, 'shell', 'input', 'keyevent', keycode);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Key error:', err);
+    res.status(500).json({ error: 'Could not send that button to the TV' });
+  }
+});
 
 export default router;
